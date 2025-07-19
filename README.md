@@ -133,6 +133,10 @@ A `FilterCondition` object has the following properties:
 - `unseen`: `Boolean|null`
     > Only return messages that have been seen (`false`) or not seen (`true`).
 
+### 2.4. `CalendarSchedulingMessage/changes`
+
+This is a standard "/changes" method as described in Section 5.2 of [RFC8620].
+
 ## 3. Scheduling Request
 
 A `CalendarSchedulingRequest` object represents an outgoing iTIP \[RFC5546] scheduling message initiated by the user. It allows a client to explicitly compose and send scheduling operations such as event invitations (`REQUEST`), replies (`REPLY`), cancellations (`CANCEL`), and other iTIP methods to one or more recipients.

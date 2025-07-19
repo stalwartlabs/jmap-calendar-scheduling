@@ -39,20 +39,21 @@ The value of this property in an account's "accountCapabilities" property is an 
 
 ## 2. Scheduling Message
 
-A `CalendarSchedulingMessage` object represents an incoming iTIP \[RFC5546] or iMIP \[RFC6047] message received by the user. These messages convey scheduling operations such as invitations, replies, cancellations, and updates. The type of operation is identified in the `method` property, which indicates the iTIP method used (e.g., `REQUEST`, `REPLY`, `CANCEL`).
+A `CalendarSchedulingMessage` object represents an incoming iTIP \[RFC5546] or iMIP \[RFC6047] scheduling message received by the user. These messages convey operations such as invitations, replies, cancellations, updates, and other scheduling-related actions. The type of operation is indicated by the `method` property, which reflects the iTIP method used (e.g., `REQUEST`, `REPLY`, `CANCEL`).
 
-The original iTIP message content is provided in the `message` property, expressed in JSCalendar format. Servers MUST convert iTIP messages from iCalendar format to JSCalendar using the transformation rules defined in \[RFC XXXX] (*JSCalendar: Converting from and to iCalendar*).
+Each scheduling message references a calendar event using its JSCalendar `uid` value, provided in the `uid` property. This approach allows clients to inspect, preview, or propose changes to an event without immediately adding it to their calendars. As defined in Section 1.4.1 of *JMAP for Calendars*, each `CalendarEvent` object has a `uid` property, which is a globally unique identifier for the event. 
 
-If the iTIP message refers to a calendar event that exists in the user's account, the `calendarEventId` property contains the identifier of that event. In such cases, the server MAY also include the `eventPatch` property, which is a patch object representing the changes that would be applied to the event if the scheduling message were processed. This allows clients to inspect and preview the proposed changes.
+The `event` property contains the JSCalendar representation of the iTIP message when the message is introducing a new event, or a new instance of a recurring event. If the referenced event or instance already exists in the user's account—either as a `CalendarEvent` or as a previously received `CalendarSchedulingMessage`—the server MAY instead include an `eventPatch` property. This property contains a patch object describing the differences between the content of the iTIP message and the corresponding event already present in the account. This enables clients to preview and evaluate the impact of the changes without automatically applying them.
 
-To support flexible workflows, clients can choose whether scheduling messages are processed automatically by the server or explicitly by the user. Servers MAY allow users to configure this behavior. When a scheduling message is automatically processed, the `processed` property is set to `true`, and the corresponding changes are reflected in the user's calendar. If `processed` is `false`, the message awaits user action and does not affect any calendar event until explicitly processed.
-
-This object allows clients to inspect, filter, and act on incoming scheduling messages in a secure and controlled manner, enabling explicit scheduling workflows where appropriate.
+To support both automated and user-driven workflows, the `processed` property indicates whether the message has already been applied by the server. If `true`, the server has already updated the user’s calendar in response to the message. If `false`, the message is pending client action and does not affect any calendar data until explicitly processed. Servers MAY allow users or clients to configure whether specific scheduling messages are processed automatically or manually.
 
 A `CalendarSchedulingMessage` object represents an iTIP message with additional metadata for JMAP processing. This object has the following properties:
 
 - `id`: `Id`
     > The id of the `CalendarSchedulingMessage`.
+
+- `uid`: `String`
+    > The JSCalendar `uid` of the event referenced by this message.
 
 - `receivedAt`: `UTCDateTime`
     > The time this message was received.
@@ -63,17 +64,17 @@ A `CalendarSchedulingMessage` object represents an iTIP message with additional 
 - `comment`: `String|null`
     > Comment sent along with the iTIP message.
 
-- `calendarEventId`: `Id|null`
-    > The id of the `CalendarEvent` that this message is about, or `null` for new events that have not yet been assigned an id.
-
 - `processed`: `Boolean` 
-    > `True` if the event has been automatically processed by the server. If false, the user must take action to process the event. Scheduling messages with `processed` set to `true` MUST include a valid `calendarEventId` property.
+    > `True` if the event has been automatically processed by the server. If false, the user must take action to process the event. 
+
+- `unseen`: `Boolean`
+    > `True` if the user has not yet seen this message. This is a client-side property that allows clients to track which messages have been viewed by the user.
 
 - `method`: `String`
     > The method of the scheduling message. One of `REQUEST`, `REPLY`, `CANCEL`, `ADD`, `COUNTER`, `DECLINECOUNTER`, `REFRESH`, `PUBLISH`.
 
-- `message`: `JSCalendar Event`
-    > The iTIP message in JSCalendar format.
+- `event`: `JSCalendar Event`
+    > The event in JSCalendar format.
 
 - `eventPatch`: `PatchObject|null`
     > A patch encoding the change between the data in the event property, and the data in the iTIP message. Or null if the message is not an update.
@@ -90,7 +91,7 @@ A scheduling message is explicitly processed by the client by setting its `proce
 
 If the scheduling message has already been processed (i.e., its `processed` property is already `true`), the server MUST reject the request and return an `alreadyProcessed` error. If the server is unable to apply the changes described in the scheduling message (such as due to a semantic conflict, missing referenced data, or validation failure), it MUST reject the update and return a `cannotProcess` error.
 
-When the scheduling message does not reference an existing calendar event (i.e., the `calendarEventId` property is `null`), and the `method` implies event creation (e.g., `REQUEST`, `PUBLISH`, or `ADD`), the client MUST specify the `targetCalendarId` argument in the same `/set` call. This argument identifies the calendar in which the event described in the scheduling message should be created. If `targetCalendarId` is required but omitted, the server MUST return `invalidArguments` error.
+When the scheduling message does not reference an existing calendar event, and the `method` implies event creation (e.g., `REQUEST`, `PUBLISH`, or `ADD`), the client MUST specify the `targetCalendarId` argument in the same `/set` call. This argument identifies the calendar in which the event described in the scheduling message should be created. If `targetCalendarId` is required but omitted, the server MUST return `invalidArguments` error.
 
 Example:
 
@@ -121,17 +122,16 @@ A `FilterCondition` object has the following properties:
     > Only return messages received after this date.
 - `before`: `UTCDateTime|null`
     > Only return messages received before this date.
+- `uid`: `String|null`
+    > Only return messages with this iTIP UID.
 - `method`: `String|null`
     > Only return messages with this iTIP method. One of `REQUEST`, `REPLY`, `CANCEL`, `ADD`, `COUNTER`, `DECLINECOUNTER`, `REFRESH`, `PUBLISH`.
 - `from`: `String|null`
     > Only return messages sent by this person.
 - `processed`: `Boolean|null`
     > Only return messages that have been processed (`true`) or not processed (`false`).
-- `hasCalendarEvent`: `Boolean|null`
-    > Only return messages that have a `calendarEventId`.
-- `calendarEventId`: `Id|null`
-    > Only return messages that relate to this calendar event.
-
+- `unseen`: `Boolean|null`
+    > Only return messages that have been seen (`false`) or not seen (`true`).
 
 ## 3. Scheduling Request
 
@@ -139,13 +139,17 @@ A `CalendarSchedulingRequest` object represents an outgoing iTIP \[RFC5546] sche
 
 To construct a `CalendarSchedulingRequest`, the client MUST specify the `method` property, identifying the iTIP method being used, and the `to` property, listing the intended recipients. The contents of the scheduling message are expressed in JSCalendar format.
 
-Clients have two options for supplying the JSCalendar data to be included in the iTIP message:
+Each scheduling request references an event via the JSCalendar `uid` property, which uniquely identifies the event across calendars and accounts. The `uid` must correspond to an existing `CalendarEvent` or `CalendarSchedulingMessage` in the account. The only exception is when using the `PUBLISH` method, which may refer to an event that does not exist in the user's calendar.
 
-- **Manual construction**: The client constructs the entire JSCalendar representation of the iTIP message and provides it in the `message` property. This method is intended for advanced clients that require full control over the structure and contents of the outgoing message.
+To construct the iTIP message, the client MUST supply either the full event data in the `event` property or a set of modifications in the `eventPatch` property. The server uses this input to build the iTIP message to be delivered to the specified recipients in the `to` property. These two mechanisms are intended to support a range of client capabilities:
 
-- **Patch-based generation**: The client provides only a `calendarEventId` referencing an existing event, and a `eventPatch` object describing the changes to be sent. The server then generates the iTIP message from the patch. This is a simplified mechanism for clients that do not wish to handle the complexities of building iTIP-compliant messages themselves.
+* When sending a full event or a new instance of a recurring event, the client MUST use the `event` property to provide the complete JSCalendar representation of the data to be transmitted.
 
-Only one of `message` or `eventPatch` MAY be provided in a request. If both are included, the server MUST reject the request with an `invalidArguments` error.
+* When sending changes to an existing event or instance (e.g., updates to time, participants, or recurrence rules), the client MUST use the `eventPatch` property to describe only the changes to be sent.
+
+Only one of `event` or `eventPatch` may be included in a single request. If both are present, the server MUST reject the request with an `invalidArguments` SetError.
+
+There is one exception: when the method is `REQUEST`, the client MAY omit both `event` and `eventPatch`. In this case, the server constructs the iTIP message directly from the existing `CalendarEvent` object identified by the given `uid`.
 
 Implementation of the `CalendarSchedulingRequest` data type and related methods is OPTIONAL. Servers are only required to implement `CalendarSchedulingMessage`. Servers indicate their support for sending scheduling messages by setting the `outboundScheduling` property to `true` in the JMAP capabilities object for this extension.
 
@@ -156,10 +160,10 @@ Even if a server advertises support for outbound scheduling via `CalendarSchedul
 A `CalendarSchedulingRequest` object represents an outgoing scheduling request message. This object has the following properties:
 
 - `id`: `Id`
-   > The id of the `CalendarSchedulingMessage`.
+   > The id of the `CalendarSchedulingRequest`.
 
- - `createdAt`: `UTCDateTime`
-    > The time this message was created.
+- `uid`: `String|null`
+    > The JSCalendar `uid` of the event referenced by this message, or `null` if the message is not associated with a specific event (e.g., when using the `PUBLISH` method).
 
 - `to`: `Person[]`
     > Who the iTIP message is addressed to. The `Person` object is defined in JMAP for Calendars.
@@ -167,17 +171,17 @@ A `CalendarSchedulingRequest` object represents an outgoing scheduling request m
 - `comment`: `String|null`
     > Comment sent along with the change by the user that made it. (e.g. `COMMENT` property in an iTIP message), if any.
 
-- `calendarEventId`: `Id|null`
-    > The id of the `CalendarEvent` that this message is about, or `null` for `PUBLISH` messages that do not relate to a specific event.
-
 - `method`: `String`
     > The method of the scheduling message. One of `REQUEST`, `REPLY`, `CANCEL`, `ADD`, `COUNTER`, `DECLINECOUNTER`, `REFRESH`, `PUBLISH`.
 
-- `message`: `JSCalendar Event|null`
-    > The iTIP message in JSCalendar format or null if the `eventPatch` is provided instead.
+- `event`: `JSCalendar Event|null`
+    > The event in JSCalendar format or null if the `eventPatch` is provided instead.
 
 - `eventPatch`: `PatchObject|null`
-    > A patch object representing the changes to be sent in the iTIP message, can only be used when `calendarEventId` is set. This is used as an alternative to the `message` property for clients who require more control over the changes being sent.
+    > A patch object representing the changes to be sent in the iTIP message.
+
+- `createdAt`: `UTCDateTime`
+    > The time this message was created.
 
 - `deliveryStatus`: `String[DeliveryStatus]|null` (server-set)
     > This represents the delivery status for each of the iTIP message's external recipients, if known. The `DeliveryStatus` object is defined in RFC8621.
@@ -186,15 +190,15 @@ A `CalendarSchedulingRequest` object represents an outgoing scheduling request m
 
 This is a standard "/set" method as described in Section 5.3 of [RFC8620].
 
-The `CalendarSchedulingRequest/set` method is used to send outbound iTIP \[RFC5546] messages, such as invitations (`REQUEST`), replies (`REPLY`), counter-proposals (`COUNTER`), cancellations (`CANCEL`), publications (`PUBLISH`), and other supported scheduling operations.
+The `CalendarSchedulingRequest/set` method is used to send outbound iTIP \[RFC5546] messages, including invitations (`REQUEST`), replies (`REPLY`), cancellations (`CANCEL`), counter-proposals (`COUNTER`), publications (`PUBLISH`), and other supported scheduling actions.
 
-To send a new event invitation, the client sets the `method` property to `"REQUEST"`, provides the `calendarEventId` referencing the calendar event to invite participants to, and sets both `message` and `eventPatch` to `null`. The server will construct the iTIP message from the referenced event.
+To send a new event invitation using the `REQUEST` method, the client sets the `method` property to `"REQUEST"`, supplies the `uid` referencing the relevant `CalendarEvent`, and omits both the `event` and `eventPatch` properties. In this case, the server constructs the iTIP message directly from the referenced event.
 
-Replies and updates to existing events are sent by specifying the appropriate `method` value (e.g., `REPLY`, `CANCEL`, `COUNTER`, etc.) and including the iTIP message content using one of the mechanisms described in Section 3: either by supplying a full `message` or by providing a `eventPatch`.
+For replies, updates, counters, and similar actions, the client must specify the appropriate `method` value and provide either a complete `event` object or an `eventPatch` describing the changes to be sent. These mechanisms are described in Section 3.
 
-To send a `PUBLISH` message, the client sets the `method` to `"PUBLISH"`, MUST set `calendarEventId` to `null`, and MUST provide the iTIP message content in the `message` property.
+To send a `PUBLISH` message, the client sets the `method` to `"PUBLISH"`, MUST set `uid` to `null`, and MUST include the event data in the `event` property. The `eventPatch` mechanism is not permitted for `PUBLISH`.
 
-The server is responsible for validating and delivering the generated iTIP message to the specified recipients using the appropriate transport mechanism.
+The server is responsible for validating the provided data, generating a valid iTIP message, and delivering it to the intended recipients using the appropriate transport mechanism (e.g., iMIP or other scheduling gateways).
 
 Example:
 
@@ -204,7 +208,7 @@ Example:
   "create": {
     "123": {
       "method": "REQUEST",
-      "calendarEventId": "event-123",
+      "uid": "event-123-abc-456",
       "to": [{
         "name": "Attendee Name",
         "email": "attendee@example.com"
@@ -229,15 +233,12 @@ A `FilterCondition` object has the following properties:
     > Only return messages sent after this date.
 - `before`: `UTCDateTime|null`
     > Only return messages sent before this date.
+- `uid`: `String|null`
+    > Only return messages with this JSCalendar UID.
 - `method`: `String|null`
     > Only return messages with this iTIP method. One of `REQUEST`, `REPLY`, `CANCEL`, `ADD`, `COUNTER`, `DECLINECOUNTER`, `REFRESH`, `PUBLISH`.
 - `to`: `String|null`
     > Only return messages sent to this person.
-- `hasCalendarEvent`: `Boolean|null`
-    > Only return messages that have a `calendarEventId`.
-- `calendarEventId`: `Id|null`
-    > Only return messages that relate to this calendar event.
-
 
 ## 4. Additional Calendar Object properties
 
